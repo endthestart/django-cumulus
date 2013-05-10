@@ -23,10 +23,10 @@ class Command(BaseCommand):
         optparse.make_option('-c', '--container',
             dest='container', help="Override STATIC_CONTAINER."),
         optparse.make_option('-m', '--md5',
-            dest='use_md5', default=False,
+            action='store_true', dest='use_md5', default=False,
             help="Use MD5 to compare files during sync."),
         optparse.make_option('-d', '--delete',
-            dest='delete', default=False,
+            action='store_true', dest='delete', default=False,
             help="Delete files on the CDN"),
     )
 
