@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import optparse
 import os
 
@@ -21,6 +22,12 @@ class Command(BaseCommand):
             help="Performs a test run of the sync."),
         optparse.make_option('-c', '--container',
             dest='container', help="Override STATIC_CONTAINER."),
+        optparse.make_option('-m', '--md5',
+            dest='use_md5', default=False,
+            help="Use MD5 to compare files during sync."),
+        optparse.make_option('-d', '--delete',
+            dest='delete', default=False,
+            help="Delete files on the CDN"),
     )
 
     # settings from cumulus.settings
@@ -54,6 +61,8 @@ class Command(BaseCommand):
         self.wipe = options.get('wipe')
         self.test_run = options.get('test_run')
         self.verbosity = int(options.get('verbosity'))
+        self.use_md5 = options.get('use_md5')
+        self.delete = options.get('delete')
         if hasattr(options, 'container'):
             self.STATIC_CONTAINER = options.get('container')
         self.sync_files()
@@ -85,7 +94,8 @@ class Command(BaseCommand):
         os.path.walk(self.DIRECTORY, self.upload_files, "foo")
 
         # remove any files on remote that don't exist locally
-        self.delete_files()
+        if self.delete:
+            self.delete_files()
 
         # print out the final tally to the cmd line
         self.update_count = self.upload_count - self.create_count
@@ -114,18 +124,39 @@ class Command(BaseCommand):
                 cloud_obj = self.container.create_object(object_name)
                 self.create_count += 1
 
-            cloud_datetime = (cloud_obj.last_modified and
-                              datetime.datetime.strptime(
-                                cloud_obj.last_modified,
-                                "%a, %d %b %Y %H:%M:%S %Z"
-                              ) or None)
-            local_datetime = datetime.datetime.utcfromtimestamp(
-                                               os.stat(file_path).st_mtime)
-            if cloud_datetime and local_datetime < cloud_datetime:
-                self.skip_count += 1
-                if self.verbosity > 1:
-                    print "Skipped %s: not modified." % object_name
-                continue
+            if self.use_md5:
+                cloud_md5 = cloud_obj.objsum
+
+                m = hashlib.md5()
+                local_file = open(file_path, 'rb')
+
+                while True:
+                    data = local_file.read(10240)
+                    if len(data) == 0:
+                        break
+                    m.update(data)
+
+                local_md5 = m.hexdigest()
+
+                if cloud_md5 == local_md5:
+                    self.skip_count += 1
+                    if self.verbosity > 1:
+                        print "Skipped %s: md5 not modified." % object_name
+                    continue
+
+            else:
+                cloud_datetime = (cloud_obj.last_modified and
+                                  datetime.datetime.strptime(
+                                    cloud_obj.last_modified,
+                                    "%a, %d %b %Y %H:%M:%S %Z"
+                                  ) or None)
+                local_datetime = datetime.datetime.utcfromtimestamp(
+                                                   os.stat(file_path).st_mtime)
+                if cloud_datetime and local_datetime < cloud_datetime:
+                    self.skip_count += 1
+                    if self.verbosity > 1:
+                        print "Skipped %s: datetime not modified." % object_name
+                    continue
 
             if not self.test_run:
                 cloud_obj.load_from_filename(file_path)

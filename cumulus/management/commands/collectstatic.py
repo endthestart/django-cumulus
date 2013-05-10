@@ -1,6 +1,6 @@
 import hashlib
 
-from django.contrib.staticfiles.management.commands import collectstatic
+from staticfiles.management.commands import collectstatic
 
 from cumulus.storage import CloudFilesStorage
 
